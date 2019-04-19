@@ -1,23 +1,11 @@
 #include <iostream>
 #include <string>
 #include <fstream>
-#include <thread>
+
 #include "Functions.h"
 #include"FunctionsT2.h"
 
-/* unsigned int pc = 0;
-unsigned int acc = 0, instReg = 0;
-int regBank[8] = { 0,0,0,0,0,0,0,0 };
-unsigned int i = 0;
-unsigned int tamMemoria = 1024;
-int flagTIMER = 0;
-unsigned int* memoriastart, * ptr, * memoriaend;
-int posicao;
-std::string  instrucao, programa;
-unsigned int arqbuffer = 0;
-Uins UINS;
-std::ifstream arq;
-char escolha = 'x'; */
+
 
 
 int main()
@@ -30,6 +18,7 @@ int main()
 		ptr = memoriastart;
 		limpamem(ptr, tamMemoria);
 		std::thread tempo(timer);
+		std::thread cpu(CPU);
 
 	while (escolha != 'S' || escolha != 's')
 	{
@@ -40,11 +29,17 @@ int main()
 		std::cout << "[E] para inicia execucao" << std::endl;
 		std::cout << "[W] para escrever em uma posicao na memoria" << std::endl;
 		std::cout << "[L] para limpar a memoria" << std::endl;
+		std::cout << "[R] para resetar a flag de execucao" << std::endl;
 		std::cout << "[S] para sair" << std::endl;
 
 		std::cin >> escolha;
 		switch (escolha)
 		{
+		case 'R':
+		case 'r':
+			startExec = false;
+			desliga = false;
+			break;
 		case 'C':
 		case 'c':
 			std::cout << "Digite o nome do programa a ser carregado" << std::endl;
@@ -59,8 +54,8 @@ int main()
 			break;
 		case 'E':
 		case 'e':
-
-			CPU();
+			startExec = true;
+			
 			break;
 		case 'M':
 		case 'm':
@@ -74,6 +69,7 @@ int main()
 			std::cout << "Desligando a Maquina" << std::endl << std::endl;
 			desliga = true;
 			 tempo.join();
+			 cpu.join();
 			delete[] memoriastart;
 			return 0;
 		case 'W':

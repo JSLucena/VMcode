@@ -85,43 +85,43 @@ unsigned int IFetch(unsigned int PC, unsigned int* mem)
 }
 std::string decode(unsigned int instR)
 {
-	//  char inst[10];
+	
 	instR = instR >> 27;
 
 	switch (instR)
 	{
-	case 0: return "JMP";//strcpy(inst,"JMP"); break;
-	case 1: return "JMPI";//strcpy(inst,"JMPI"); break;
-	case 2: return "JMPIG";//strcpy(inst,"JMPIG"); break;
-	case 3: return "JMPIL";//strcpy(inst,"JMPIL"); break;
-	case 4: return "JMPIE";//strcpy(inst,"JMPIE"); break;
+	case 0: return "JMP";
+	case 1: return "JMPI";
+	case 2: return "JMPIG";
+	case 3: return "JMPIL";
+	case 4: return "JMPIE";
 
-	case 8: return "ADDI";//strcpy(inst,"ADDI"); break;
-	case 9: return "SUBI";//strcpy(inst,"SUBI"); break;
-	case 10: return "ANDI";//strcpy(inst,"ANDI");break;
-	case 11: return "ORI";//strcpy(inst,"ORI"); break;
-	case 12: return "LDI";//strcpy(inst,"LDI"); break;
-	case 13: return "LDD";//strcpy(inst,"LDD"); break;
-	case 14: return "STD";//strcpy(inst,"STD"); break;
+	case 8: return "ADDI";
+	case 9: return "SUBI";
+	case 10: return "ANDI";
+	case 11: return "ORI";
+	case 12: return "LDI";
+	case 13: return "LDD";
+	case 14: return "STD";
 
-	case 16: return "ADD";//strcpy(inst,"ADD"); break;
-	case 17: return "SUB";//strcpy(inst,"SUB"); break;
-	case 18: return "AND";//strcpy(inst,"AND"); break;
-	case 19: return "OR";//strcpy(inst,"OR"); break;
-	case 20: return "LDX";//strcpy(inst,"LDX"); break;
-	case 21: return "STX";//strcpy(inst,"STX"); break;
+	case 16: return "ADD";
+	case 17: return "SUB";
+	case 18: return "AND";
+	case 19: return "OR";
+	case 20: return "LDX";
+	case 21: return "STX";
 
-	case 24: return "NOT";//strcpy(inst,"NOT"); break;
-	case 25: return "SHL";//strcpy(inst, "SHL"); break;
-	case 26: return "SHR";//strcpy(inst, "SHR"); break;
-	case 27: return "SWAP";//strcpy(inst, "SWAP"); break;
-	case 28: return "MULT";//strcpy(inst,"MULT"); break;
+	case 24: return "NOT";
+	case 25: return "SHL";
+	case 26: return "SHR";
+	case 27: return "SWAP";
+	case 28: return "MULT";
 
-	case 31: return "STOP";//strcpy(inst, "STOP"); break;
+	case 31: return "STOP";
 
 	default: return "INVALID_INSTRUCTION";
 	}
-	//   return inst;
+	
 }
 
 void MemOps( int& reg, std::string instrucao, unsigned int address, unsigned int* memoria)
@@ -161,7 +161,7 @@ void ULA( int &op1, unsigned int op2, std::string instrucao)
 	else if (instrucao == "SHL")
 		op1 = op1 << 1;
 	else if (instrucao == "SHR")
-		op1 = op1 >> 2;
+		op1 = op1 >> 1;
 	else if (instrucao == "SWAP")
 		std::cout << "swap ainda nao funciona!" << std::endl;
 	else if (instrucao == "LDI")

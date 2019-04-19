@@ -5,40 +5,44 @@
 #include<iostream>
 #include<string>
 #include<chrono>
+#include <thread>
 unsigned int pc = 0;
 unsigned int acc = 0, instReg = 0;
 int regBank[8] = { 0,0,0,0,0,0,0,0 };
 unsigned int i = 0;
 unsigned int tamMemoria = 1024;
-bool processEnd = false;
+
 int interrupcaoTIMER = 0;
-unsigned int* memoriastart, * ptr, * memoriaend;
+unsigned int* memoriastart, * ptr;
 int posicao;
 std::string  instrucao, programa;
+
 unsigned int arqbuffer = 0;
 Uins UINS;
 std::ifstream arq;
-char escolha = 'x';
-int id;
-std::list<ProcessControlBlock> ready;
-ProcessControlBlock running;
-bool particoes[8] = { false, false, false, false, false, false, false, false };
-bool desliga = false;
 
+int id, input; //id do processo / input para programas que necessitam
+std::list<ProcessControlBlock> ready; //fila de processos prontos para serem escalonados
+ProcessControlBlock running; //pcb do processo que esta em execucao
+bool particoes[8] = { false, false, false, false, false, false, false, false }; //vetor de particoes alocadas, falso significa que nao estao alocadas
 
+char escolha = 'x'; //variavel de controle para os comandos do shell
+bool desliga = false; //variavel de controle, que termina com as threads depois que a execucao de todos os processos acaba
+bool startExec = false; //variavel de controle que ordena o inicio da execucao apos o comando [e]
+bool processEnd = false; //variavel que indica o fim de um processo, para nao adiciona-lo novamente na fila de processos 
 
-ProcessControlBlock criaPCB(int particao)
+ProcessControlBlock criaPCB(int particao) //cria nosso objeto PCB, com base, limite, estado inicial e ID
 {
 	ProcessControlBlock pcb = ProcessControlBlock(PART_SIZE * particao, PART_SIZE * (particao + 1) - 1, READY, id);
 	return pcb;
 }
 
-void alocaParticao(int it)
+void alocaParticao(int it) //funcao que aloca a particao, colocando seu valor em true e incrementando o ID
 {
 	particoes[it] = true;
 	id++;
 }
-void carrega(int it)
+void carrega(int it) //carrega o arquivo na particao de memoria do processo
 {
 	ptr = &memoriastart[PART_SIZE * it];
 	while (arq)
@@ -54,28 +58,31 @@ void carrega(int it)
 
 	}
 	arq.close();
-	memoriaend = ptr--;
 
 	ptr = memoriastart;
 }
-void criacaoProcesso(int particao)
+void criacaoProcesso(int particao) //funcao de criacao do processo
 {
-	alocaParticao(particao);
-	carrega(particao);
-	ready.push_back(criaPCB(particao));
-	std::cout << ready.size();
-	std::cout << ready.front().getBase() << " " << ready.front().getLimite() << std::endl;
-	//rotinaTratamentoTimer();
-    if(running.getLimite()== 0)
+	alocaParticao(particao); //aloca na particao
+	if (programa == "p2.txt" || programa == "fat.txt")
+	{
+		std::cout << "Este programa precisa de um input do usuario, digite o valor abaixo: " << std::endl;
+		std::cin >> input;
+		memoriastart[100 + PART_SIZE * particao] = input;
+	}
+	carrega(particao); //carrega na particao
+	ready.push_back(criaPCB(particao)); //joga o processo novo na fila deprontos
+	
+	
+    if(running.getLimite()== 0) //se nao existir nenhum running(limite = 0)
     {
-        running = ready.front();
-		std::cout << running.getBase() << " " << running.getLimite() << std::endl;
-        pc = running.getPC();
-		//std::cout <<"1";
-        ready.pop_front();
+        running = ready.front(); //ele pega o primeiro da lista
+        pc = running.getPC(); //ajusta o PC para la
+		
+        ready.pop_front(); //e corta da lista
     }
 }
-int criaProcesso()
+int criaProcesso() //funcao que chama a criacao do processo
 {
 	int it;
     if (programa.find(".txt") != std::string::npos)
@@ -83,7 +90,7 @@ int criaProcesso()
     else programa = programa + ".txt";
 
 
-    //programa =  programa;
+    
 
 
 	std::cout << "Abrindo programa " << programa << std::endl << std::endl;
@@ -98,7 +105,8 @@ int criaProcesso()
 	{
 		if (particoes[it] == false)
 		{
-			criacaoProcesso(it);
+			criacaoProcesso(it); //aqui
+			
 			return 1;
 		}
 	}
@@ -108,144 +116,174 @@ int criaProcesso()
 
 }
 
-void salvaContexto(ProcessControlBlock  pcb)
+void salvaContexto(ProcessControlBlock  &pcb) //funcao que salva PC e regs no PCB
 {
 	int ilocal = 0;
 	for (ilocal = 0; ilocal < 8; ilocal++)
 		pcb.setReg(ilocal, regBank[ilocal]);
+	
 	pcb.setPC(pc);
+	
 }
-void restauraContexto(ProcessControlBlock pcb)
+void restauraContexto(ProcessControlBlock &pcb) //funcao que restaura os regs e o PC do PCB
 {
 	int ilocal = 0;
 	for (ilocal = 0; ilocal < 8; ilocal++)
 		regBank[ilocal]= pcb.getReg(ilocal);
 	pc = pcb.getPC();
+	
+	pcb.setEstado(RUNNING);
 }
-void rotinaTratamentoTimer()
+void rotinaTratamentoTimer() //rotina de tratamento de interrupcao por timeout
 {
 	salvaContexto(running);
+	
 	running.setEstado(READY);
 
-	if (processEnd == true)
+	if (processEnd == true) //se um processo terminar
 	{
 		processEnd = false;
-		if (ready.size() != 0)
+		if (ready.size() != 0) //ele testa se a fila nao esta vazia
 		{
+			//se nao estiver ele desaloca o processo que acabou e escalona o proximo da fila
+			particoes[running.getBase() / PART_SIZE] = false;
 			running = ready.front();
 			ready.pop_front();
 			restauraContexto(running);
+			desliga = false;
+			return;
 		}
-		else desliga = true;
+		else //se estiver ele desaloca e bloqueia a execucao da cpu
+		{
+			particoes[running.getBase() / PART_SIZE] = false;
+			running.setLimite(0);
+		
+			return;
+		}
 	}
-	if (ready.size() != 0)
+	else //se o time slice do processo acabou
 	{
-		running = ready.front();
-		restauraContexto(running);
-		ready.pop_front();
-		interrupcaoTIMER = 0;
+		ready.push_back(running); //ele joga de volta na fila
+		if (ready.size() != 0)
+		{
+			//e escalona o proximo se a fila nao estiver vazia
+			running = ready.front();
+			restauraContexto(running);
+			
+			ready.pop_front();
+			interrupcaoTIMER = 0;
+			desliga = false;
+			return;
+		}
+		interrupcaoTIMER = 0; //depois ele tira a flag de interrupcao
+		
+		return;
 	}
-	else desliga = true;
-	return;
 }
 #endif
 void CPU()
 {
 	while (1)
-    {
+	{
+		
+		if (startExec == true) //a CPU so ira executar se esta flag for ativada com o comando [e]
+		{
+			if (interrupcaoTIMER == 1) 
+				rotinaTratamentoTimer(); //executa a rotina de tratamento de interrupcao se a flag for ativada
+			if (desliga == true) //flag ativada depois de usar o comando [s] para desligar a maquina
+				break;
+			if (running.getLimite() != 0)
+			{
+				instReg = IFetch(pc, memoriastart); //busca de instrucoes
+				UINS.setINST(decode(instReg)); //decodificacao
+				UINS.setR1(GetR1(instReg, UINS.getINST())); //decodificao
+				UINS.setR2(getR2_IMM(instReg, UINS.getINST())); //decodificacao
+				std::cout << "Processo:" << running.getID() << " " << UINS.getINST() << " " << UINS.getR1() << " " << UINS.getR2() << std::endl;
 
-    if(interrupcaoTIMER == 1)
-        rotinaTratamentoTimer();
-	if (desliga == true)
-		break;
-	if(running.getLimite() != 0)
-        {
-            instReg = IFetch(pc, memoriastart);
-            UINS.setINST(decode(instReg));
-            UINS.setR1(GetR1(instReg, UINS.getINST()));
-            UINS.setR2(getR2_IMM(instReg, UINS.getINST()));
-            std::cout <<"Processo:"<< running.getID()<< " "<< UINS.getINST() << " " << UINS.getR1() << " " << UINS.getR2() << std::endl;
+				//operacoes com a memoria
+				if (UINS.getINST() == "LDD" || UINS.getINST() == "STD") 
+				{
+					
 
-
-            if (UINS.getINST() == "LDD" || UINS.getINST() == "STD")
-            {
-                //if(UINS.getR2() < running->getBase() || UINS.getR2() > running->getLimite())
-              //  {
-              //      std::cout << "fudeu, o processo vai fechar";
-               //     processEnd = true;
-              //      rotinaTratamentoTimer();
-              //  }
-
-                if (UINS.getINST() == "STX")
-                    MemOps(regBank[UINS.getR2()], UINS.getINST(), running.getBase()+UINS.getR1(), memoriastart);
-                else
-                    MemOps(regBank[UINS.getR1()], UINS.getINST(), running.getBase()+UINS.getR2(), memoriastart);
-            }
-            else
-            {
+					if (UINS.getINST() == "STX")
+						MemOps(regBank[UINS.getR2()], UINS.getINST(), running.getBase() + UINS.getR1(), memoriastart);
+					else
+						MemOps(regBank[UINS.getR1()], UINS.getINST(), running.getBase() + UINS.getR2(), memoriastart);
+				}
+				else
+				{
 
 
-                if (UINS.getINST() == "STX")
-                    MemOps(regBank[UINS.getR2()], UINS.getINST(), running.getBase()+regBank[UINS.getR1()], memoriastart);
-                else
-                    MemOps(regBank[UINS.getR1()], UINS.getINST(), running.getBase()+regBank[UINS.getR2()], memoriastart);
-            }
-            if (UINS.getINST() == "LDI" || UINS.getINST() == "ADDI" || UINS.getINST() == "SUBI" || UINS.getINST() == "ANDI" || UINS.getINST() == "ORI")
-                ULA(regBank[UINS.getR1()], UINS.getR2(), UINS.getINST());
-            else
-                ULA(regBank[UINS.getR1()], regBank[UINS.getR2()], UINS.getINST());
+					if (UINS.getINST() == "STX") 
+						MemOps(regBank[UINS.getR2()], UINS.getINST(), running.getBase() + regBank[UINS.getR1()], memoriastart);
+					else
+						MemOps(regBank[UINS.getR1()], UINS.getINST(), running.getBase() + regBank[UINS.getR2()], memoriastart);
+				}
+				//###############################
 
-            if (UINS.getINST() == "STOP")
-            {
-                interrupcaoTIMER = 1;
-                processEnd = true;
+				//operacoes com a ULA
+				if (UINS.getINST() == "LDI" || UINS.getINST() == "ADDI" || UINS.getINST() == "SUBI" || UINS.getINST() == "ANDI" || UINS.getINST() == "ORI")
+					ULA(regBank[UINS.getR1()], UINS.getR2(), UINS.getINST());
+				else
+					ULA(regBank[UINS.getR1()], regBank[UINS.getR2()], UINS.getINST());
+				//###############################
+				if (UINS.getINST() == "STOP") //se o processo terminar ele liga o flag de interrupcao e o flag de fim de processo
+				{
+					interrupcaoTIMER = 1;
+					processEnd = true;
 
-                //break;
-            }
-            if (Branch(regBank[UINS.getR1()], regBank[UINS.getR2()], UINS.getINST()))
-                if (UINS.getINST() == "JMP")
-                    pc = UINS.getR2()+running.getBase();
-                else
-                    pc = regBank[UINS.getR1()]+running.getBase();
-            else
-                pc++;
+					
+				}
+				//operacoes de salto
+				if (Branch(regBank[UINS.getR1()], regBank[UINS.getR2()], UINS.getINST()))
+					if (UINS.getINST() == "JMP")
+						pc = UINS.getR2() + running.getBase(); //jumps e branches dependentes da particao
+					else
+						pc = regBank[UINS.getR1()] + running.getBase(); //jumps e branches dependentes da particao
+				else
+					pc++;
+				//###############################
 
+				
 
-           // if (flagTIMER == true)
-             //   flagTIMER = false;
-
-        }
-    }
+			}
+			
+		}
+	}
 }
 void timer()
 {
-	//duration;
+	
 	std::chrono::time_point<std::chrono::system_clock> start, end;
 	std::chrono::duration<double> elapsed_seconds;
 	double tempo = 0.0;
 	while (1)
 	{
-		if (interrupcaoTIMER == 0)
+		if (startExec == true)
 		{
-			if (tempo >= 1.5)
+			if (interrupcaoTIMER == 0)
 			{
-				std::cout << "CPU timed out" << std::endl;
-				interrupcaoTIMER = 1;
-				tempo = 0.0;
+				if (tempo >= 0.001) //depois que o tempo passar de 1ms ele liga o flag de interrupcao
+				{
+					std::cout << "CPU timed out " << tempo << "s " ;
+					interrupcaoTIMER = 1; 
+					tempo = 0.0;
 
 
+				}
+				else
+				{
+					start = std::chrono::system_clock::now(); //nosso timer subtrai o horario da batida final do clock com a batida de inicio do clock
+
+					end = std::chrono::system_clock::now(); 
+					elapsed_seconds = end - start;
+					tempo += elapsed_seconds.count(); //e vai contando este tempo ate que de 1ms
+
+				}
 			}
-			else
-			{
-				start = std::chrono::system_clock::now();
 
-				end = std::chrono::system_clock::now();
-				elapsed_seconds = end - start;
-				tempo += elapsed_seconds.count();
-
-			}
+			if (desliga == true)
+				break;
 		}
-		if (desliga == true)
-			break;
 	}
 }
