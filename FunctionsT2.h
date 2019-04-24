@@ -6,6 +6,8 @@
 #include<string>
 #include<chrono>
 #include <thread>
+#include "MICROINS.h"
+#include "Functions.h"
 unsigned int pc = 0;
 unsigned int acc = 0, instReg = 0;
 int regBank[8] = { 0,0,0,0,0,0,0,0 };
