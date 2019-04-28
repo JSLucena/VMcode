@@ -153,13 +153,14 @@ void rotinaTratamentoTimer() //rotina de tratamento de interrupcao por timeout
 			ready.pop_front();
 			restauraContexto(running);
 			desliga = false;
+			interrupcaoTIMER = 0; //depois ele tira a flag de interrupcao
 			return;
 		}
 		else //se estiver ele desaloca e bloqueia a execucao da cpu
 		{
 			particoes[running.getBase() / PART_SIZE] = false;
 			running.setLimite(0);
-		
+			interrupcaoTIMER = 0; //depois ele tira a flag de interrupcao
 			return;
 		}
 	}
@@ -173,7 +174,7 @@ void rotinaTratamentoTimer() //rotina de tratamento de interrupcao por timeout
 			restauraContexto(running);
 			
 			ready.pop_front();
-			interrupcaoTIMER = 0;
+			interrupcaoTIMER = 0; //depois ele tira a flag de interrupcao
 			desliga = false;
 			return;
 		}
@@ -261,32 +262,31 @@ void timer()
 	double tempo = 0.0;
 	while (1)
 	{
-		if (startExec == true)
+	
+		if (interrupcaoTIMER == 0)
 		{
-			if (interrupcaoTIMER == 0)
+			if (tempo >= 0.001) //depois que o tempo passar de 1ms ele liga o flag de interrupcao
 			{
-				if (tempo >= 0.001) //depois que o tempo passar de 1ms ele liga o flag de interrupcao
-				{
-					std::cout << "CPU timed out " << tempo << "s " ;
-					interrupcaoTIMER = 1; 
-					tempo = 0.0;
+				if (startExec == true && ready.size() != 0)
+					std::cout << "CPU timed out " << std::endl;
+				interrupcaoTIMER = 1; 
+				tempo = 0.0;
 
 
-				}
-				else
-				{
-					start = std::chrono::system_clock::now(); //nosso timer subtrai o horario da batida final do clock com a batida de inicio do clock
-
-					end = std::chrono::system_clock::now(); 
-					elapsed_seconds = end - start;
-					tempo += elapsed_seconds.count(); //e vai contando este tempo ate que de 1ms
-
-				}
 			}
+			else
+			{
+				start = std::chrono::system_clock::now(); //nosso timer subtrai o horario da batida final do clock com a batida de inicio do clock
+				end = std::chrono::system_clock::now(); 
+				elapsed_seconds = end - start;
+				tempo += elapsed_seconds.count(); //e vai contando este tempo ate que de 1ms
 
-			if (desliga == true)
-				break;
+			}
 		}
+
+		if (desliga == true)
+			break;
+	
 	}
 }
 void shell()
