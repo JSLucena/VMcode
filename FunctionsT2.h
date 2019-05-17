@@ -3,18 +3,21 @@
 #define _FUNCT_H
 #include"T2.h"
 #include<iostream>
+#include<queue>
 #include<string>
 #include<chrono>
 #include <thread>
 #include "MICROINS.h"
 #include "Functions.h"
+#include "FilaIO.h"
+
 unsigned int pc = 0;
 unsigned int acc = 0, instReg = 0;
 int regBank[8] = { 0,0,0,0,0,0,0,0 };
 unsigned int i = 0;
 unsigned int tamMemoria = 1024;
 
-int interrupcaoTIMER = 0;
+int interrupcao = 0;
 unsigned int* memoriastart, * ptr;
 int posicao;
 std::string  instrucao, programa;
@@ -28,17 +31,28 @@ std::list<ProcessControlBlock> ready; //fila de processos prontos para serem esc
 ProcessControlBlock running; //pcb do processo que esta em execucao
 bool particoes[8] = { false, false, false, false, false, false, false, false }; //vetor de particoes alocadas, falso significa que nao estao alocadas
 
-char escolha = 'x'; //variavel de controle para os comandos do shell
+
 bool desliga = false; //variavel de controle, que termina com as threads depois que a execucao de todos os processos acaba
 bool startExec = false; //variavel de controle que ordena o inicio da execucao apos o comando [e]
 bool processEnd = false; //variavel que indica o fim de um processo, para nao adiciona-lo novamente na fila de processos 
+
+//############################################Trabalho 3####################################
+std::string escolha; //variavel de controle para os comandos do shell
+std::list<ProcessControlBlock> blocked;
+std::queue<pedidoConsole> filaPedidos;
+int parametro;
+//############################################Trabalho 3####################################
+
 
 ProcessControlBlock criaPCB(int particao) //cria nosso objeto PCB, com base, limite, estado inicial e ID
 {
 	ProcessControlBlock pcb = ProcessControlBlock(PART_SIZE * particao, PART_SIZE * (particao + 1) - 1, READY, id);
 	return pcb;
 }
-
+void rotinaTratamentoInterrupcao()
+{
+	filaPedidos.push(pedidoConsole(parametro, interrupcao));
+}
 void alocaParticao(int it) //funcao que aloca a particao, colocando seu valor em true e incrementando o ID
 {
 	particoes[it] = true;
@@ -145,7 +159,7 @@ void rotinaTratamentoTimer() //rotina de tratamento de interrupcao por timeout
 	if (processEnd == true) //se um processo terminar
 	{
 		processEnd = false;
-		if (ready.size() != 0) //ele testa se a fila nao esta vazia
+		if (ready.size() != 0 ) //ele testa se a fila nao esta vazia
 		{
 			//se nao estiver ele desaloca o processo que acabou e escalona o proximo da fila
 			particoes[running.getBase() / PART_SIZE] = false;
@@ -153,14 +167,14 @@ void rotinaTratamentoTimer() //rotina de tratamento de interrupcao por timeout
 			ready.pop_front();
 			restauraContexto(running);
 			desliga = false;
-			interrupcaoTIMER = 0; //depois ele tira a flag de interrupcao
+			interrupcao = 0; //depois ele tira a flag de interrupcao
 			return;
 		}
 		else //se estiver ele desaloca e bloqueia a execucao da cpu
 		{
 			particoes[running.getBase() / PART_SIZE] = false;
 			running.setLimite(0);
-			interrupcaoTIMER = 0; //depois ele tira a flag de interrupcao
+			interrupcao = 0; //depois ele tira a flag de interrupcao
 			return;
 		}
 	}
@@ -174,11 +188,11 @@ void rotinaTratamentoTimer() //rotina de tratamento de interrupcao por timeout
 			restauraContexto(running);
 			
 			ready.pop_front();
-			interrupcaoTIMER = 0; //depois ele tira a flag de interrupcao
+			interrupcao = 0; //depois ele tira a flag de interrupcao
 			desliga = false;
 			return;
 		}
-		interrupcaoTIMER = 0; //depois ele tira a flag de interrupcao
+		interrupcao = 0; //depois ele tira a flag de interrupcao
 		
 		return;
 	}
@@ -191,8 +205,10 @@ void CPU()
 		
 		if (startExec == true) //a CPU so ira executar se esta flag for ativada com o comando [e]
 		{
-			if (interrupcaoTIMER == 1) 
+			if (interrupcao == 3)
 				rotinaTratamentoTimer(); //executa a rotina de tratamento de interrupcao se a flag for ativada
+			else if (interrupcao == 1 || interrupcao == 2)
+				rotinaTratamentoInterrupcao();
 			if (desliga == true) //flag ativada depois de usar o comando [s] para desligar a maquina
 				break;
 			if (running.getLimite() != 0)
@@ -232,10 +248,16 @@ void CPU()
 				//###############################
 				if (UINS.getINST() == "STOP") //se o processo terminar ele liga o flag de interrupcao e o flag de fim de processo
 				{
-					interrupcaoTIMER = 1;
+					interrupcao = 1;
 					processEnd = true;
 
 					
+				}
+				if (UINS.getINST() == "TRAP")
+				{
+					interrupcao = regBank[UINS.getR1()];
+					parametro = regBank[UINS.getR2()];
+
 				}
 				//operacoes de salto
 				if (Branch(regBank[UINS.getR1()], regBank[UINS.getR2()], UINS.getINST()))
@@ -263,13 +285,13 @@ void timer()
 	while (1)
 	{
 	
-		if (interrupcaoTIMER == 0)
+		if (interrupcao == 0)
 		{
 			if (tempo >= 0.001) //depois que o tempo passar de 1ms ele liga o flag de interrupcao
 			{
 				if (startExec == true && ready.size() != 0)
 					std::cout << "CPU timed out " << std::endl;
-				interrupcaoTIMER = 1; 
+				interrupcao = 3; 
 				tempo = 0.0;
 
 
@@ -291,74 +313,74 @@ void timer()
 }
 void shell()
 {
-	while (escolha != 'S' || escolha != 's')
+	while (1)
 	{
 		std::cout << "Digite:" << std::endl;
-		std::cout << "[C] para carregar um arquivo na memoria" << std::endl;
-		std::cout << "[D] para fazer o dump na memoria" << std::endl;
-		std::cout << "[M] para acessar uma posição x na memoria" << std::endl;
-		std::cout << "[E] para inicia execucao" << std::endl;
-		std::cout << "[W] para escrever em uma posicao na memoria" << std::endl;
-		std::cout << "[L] para limpar a memoria" << std::endl;
-		std::cout << "[R] para resetar a flag de execucao" << std::endl;
-		std::cout << "[S] para sair" << std::endl;
+		std::cout << "[shell C] para carregar um arquivo na memoria" << std::endl;
+		std::cout << "[shell D] para fazer o dump na memoria" << std::endl;
+		std::cout << "[shell M] para acessar uma posição x na memoria" << std::endl;
+		std::cout << "[shell E] para inicia execucao" << std::endl;
+		std::cout << "[shell W] para escrever em uma posicao na memoria" << std::endl;
+		std::cout << "[shell L] para limpar a memoria" << std::endl;
+		std::cout << "[shell R] para resetar a flag de execucao" << std::endl;
+		std::cout << "[shell S] para sair" << std::endl;
 
-		std::cin >> escolha;
-		switch (escolha)
+		std::getline(std::cin, escolha);
+		if(escolha.find("shell") != escolha.npos)
 		{
-		case 'R':
-		case 'r':
-			startExec = false;
-			desliga = false;
-			break;
-		case 'C':
-		case 'c':
-			std::cout << "Digite o nome do programa a ser carregado" << std::endl;
-			std::cin >> programa;
-			criaProcesso();
+			if (escolha == "shell R" || escolha == "shell r")
+			{
+				startExec = false;
+				desliga = false;
+			}
+			else if (escolha == "shell C" || escolha == "shell c")
+			{
+				std::cout << "Digite o nome do programa a ser carregado" << std::endl;
+				std::cin >> programa;
+				criaProcesso();
+			}
+			else if (escolha == "shell D" || escolha == "shell d")
+			{
+				dumpmem(memoriastart);
+				std::cout << std::endl << std::endl;
+			}
+			else if (escolha == "shell E" || escolha == "shell e")
+			{
+				startExec = true;
+			}
+			else if (escolha == "shell M" || escolha == "shell m")
+			{
+				std::cout << "Digite a posicao que deseja verificar" << std::endl;
+				std::cin >> posicao;
+				std::cout << "Buscando a posicao de memoria " << posicao << std::endl;
+				std::cout << "Valor encontrado: " << memoriastart[posicao] << std::endl << std::endl;
+			}
+			else if (escolha == "shell S" || escolha == "shell s")
+			{
+				std::cout << "Desligando a Maquina" << std::endl << std::endl;
+				desliga = true;
 
-			break;
-		case 'D':
-		case 'd':
-			dumpmem(memoriastart);
-			std::cout << std::endl << std::endl;
-			break;
-		case 'E':
-		case 'e':
-			startExec = true;
-
-			break;
-		case 'M':
-		case 'm':
-			std::cout << "Digite a posicao que deseja verificar" << std::endl;
-			std::cin >> posicao;
-			std::cout << "Buscando a posicao de memoria " << posicao << std::endl;
-			std::cout << "Valor encontrado: " << memoriastart[posicao] << std::endl << std::endl;
-			break;
-		case 'S':
-		case 's':
-			std::cout << "Desligando a Maquina" << std::endl << std::endl;
-			desliga = true;
-			
-			delete[] memoriastart;
-			return;
-		case 'W':
-		case 'w':
-			std::cout << "Digite a posicao que deseja alterar na memoria" << std::endl;
-			std::cin >> posicao;
-			std::cout << "Agora digite o valor que deseja salvar na memoria" << std::endl;
-			std::cin >> i;
-			memoriastart[posicao] = i;
-			break;
-		case 'L':
-		case 'l':
-			std::cout << "Limpando memoria..." << std::endl;
-			limpamem(memoriastart, tamMemoria);
-			std::cout << "Memoria apagada" << std::endl << std::endl;
-			break;
-		default:
-			std::cout << "Comando invalido, digite novamente" << std::endl;
-			break;
+				delete[] memoriastart;
+				return;
+			}
+			else if (escolha == "shell W" || escolha == "shell w")
+			{
+				std::cout << "Digite a posicao que deseja alterar na memoria" << std::endl;
+				std::cin >> posicao;
+				std::cout << "Agora digite o valor que deseja salvar na memoria" << std::endl;
+				std::cin >> i;
+				memoriastart[posicao] = i;
+			}
+			else if (escolha == "shell L" || escolha == "shell l")
+			{
+				std::cout << "Limpando memoria..." << std::endl;
+				limpamem(memoriastart, tamMemoria);
+				std::cout << "Memoria apagada" << std::endl << std::endl;
+			}
+			else
+			{
+				std::cout << "Comando invalido, digite novamente" << std::endl;
+			}
 		}
 	}
 }

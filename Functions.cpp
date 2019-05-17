@@ -53,6 +53,7 @@ std::string decode(unsigned int instR)
 	case 2: return "JMPIG";
 	case 3: return "JMPIL";
 	case 4: return "JMPIE";
+	case 5: return "TRAP";
 
 	case 8: return "ADDI";
 	case 9: return "SUBI";
