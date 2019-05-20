@@ -20,10 +20,11 @@ int main()
 		std::thread tempo(timer);
 		std::thread cpu(CPU);
 		std::thread SHELL(shell);
-
+		std::thread CONSOLE(console);
+	//	std::thread system(syscall);
 		tempo.join();
 		cpu.join();
 		SHELL.join();
-
+		CONSOLE.join();
 	
 }

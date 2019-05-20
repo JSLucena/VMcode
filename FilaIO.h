@@ -6,11 +6,22 @@ class pedidoConsole
 protected:
 	int parametro;
 	int tipo;
+	int idProcesso;
+	int base;
 public:
-	pedidoConsole(int N, int T)
+	pedidoConsole()
+	{
+		parametro = 0;
+		tipo = 0;
+		idProcesso = 0;
+		base = 0;
+	}
+	pedidoConsole(int N, int T, int id, int l)
 	{
 		parametro = N;
 		tipo = T;
+		idProcesso = id;
+		base = l;
 	}
 	void setParametro(int N)
 	{
@@ -27,6 +38,22 @@ public:
 	int getTipo()
 	{
 		return tipo;
+	}
+	void setIdProcesso(int N)
+	{
+		idProcesso = N;
+	}
+	int getIDProcesso()
+	{
+		return idProcesso;
+	}
+	void setBase(int N)
+	{
+		base = N;
+	}
+	int getBase()
+	{
+		return base;
 	}
 };
 #endif
