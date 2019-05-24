@@ -296,12 +296,7 @@ void CPU()
 
 
 					}
-					if (UINS.getINST() == "TRAP")
-					{
 					
-						syscall();
-
-					}
 
 					//operacoes de salto
 					if (Branch(regBank[UINS.getR1()], regBank[UINS.getR2()], UINS.getINST()))
@@ -311,10 +306,18 @@ void CPU()
 							pc = regBank[UINS.getR1()] + running.getBase(); //jumps e branches dependentes da particao
 					else
 						pc++;
-					//###############################
-				//	std::cout << pc << "::::::" << regBank[2] << "!!!!!! " << ready.size() << " xxx " << blocked.size() << " ttt ";
 
-			//	std::cout << "Processo:" << running.getID() << " " << UINS.getINST() << " " << UINS.getR1() << " " << UINS.getR2() << std::endl;
+					if (UINS.getINST() == "TRAP")
+					{
+
+						syscall();
+
+					}
+					//###############################
+					//std::cout << pc << "::::::" << regBank[2] << "!!!!!! " << ready.size() << " xxx " << blocked.size() << " ttt ";
+
+			
+				//	std::cout << "Processo:" << running.getID() << " " << UINS.getINST() << " " << UINS.getR1() << " " << UINS.getR2() << std::endl;
 				}
 			
 
@@ -339,7 +342,7 @@ void timer()
 			{
 				
 		
-				mut.lock(); //para controlar a concorrência
+				
 				if (interrupcao == 0)
 				{
 					
@@ -348,7 +351,7 @@ void timer()
 				
 					
 				}
-				mut.unlock();//para controlar a concorrência
+				
 
 			}
 			else
@@ -451,37 +454,11 @@ void rotinaTratamentoIO()
 	int aux1, aux2;	
 	std::list<ProcessControlBlock>::iterator it;
 
-	if (delay == true) //se tivemos que atrasar o termino do request
-	{
-		interrupcao = delayCatcher; //tratamos ele agora entao
-		delay = false;
-	}
-
-	if (interrupcao == 1 || interrupcao == 2) //se o nosso syscall tem algo para nos pedir
-	{
-		pedido = pedidoConsole(parametro, interrupcao, idRequest, baseRequest); //criamos um novo pedido
-
-		salvaContexto(running); //salvamos contexto
-		running.setEstado(BLOCKED);
-		filaPedidos.push(pedido); //mandamos o pedido
 	
-		blocked.push_back(running); //e bloqueamos running
-			if (ready.size() != 0) //se depois de bloquearmos o processo existe um processo pronto para executar 
-			{
-			//fazemos o escalonamento
-				running = ready.front();
-					restauraContexto(running);
-					ready.pop_front();
-					
-			}
-			else
-			{
-				wait = true; //se nao, trancamos a CPU
-				
-			}
-	}
 
-	if (interrupcao == 4 ||  interrupcao == 5) //se nosso console tem algum pedido pronto
+	
+
+	if (interrupcao == 1 ||  interrupcao == 2) //se nosso console tem algum pedido pronto
 	{
 	
 		for (it = blocked.begin(); it != blocked.end(); it++)
@@ -508,9 +485,9 @@ void rotinaTratamentoIO()
 			
 			if (aux1 == aux2) // e os dois tiverem PIDS iguais
 			{
-				running = ready.front(); //pegamos o da fila ready, que é o certo
-				ready.pop_front(); // e matamos a cópia
-				restauraContexto(running);
+				//encontramos o farsante
+				ready.pop_front(); // matamos ele
+				restauraContexto(running); //e ficamos com o verdadeiro
 				
 			}
 		}
@@ -531,7 +508,7 @@ void console()
 	while (1)
 	{
 	
-		mut.lock();//para controlar a concorrência
+		//mut.lock();//para controlar a concorrência
 			if (interrupcao == 0) //so podemos tratar se nao estivermos escalonando nem tratando outra interrupcao
 			{
 				if (filaPedidos.size() != 0) //enquanto tiverem pedidos, o console pega e vai tratando
@@ -540,7 +517,7 @@ void console()
 				
 					if (pedido.getTipo() == 1) //se for leitura da memoria para escrita no terminal
 					{
-						interrupcao = 4; //sinalizamos que o pedido foi tratado
+						interrupcao = 1; //sinalizamos que o pedido foi tratado
 						pedidoPronto = pedido; //sinalizamos que o pedido foi tratado
 						filaPedidos.pop(); //e tiramos ele da fila
 						
@@ -556,7 +533,7 @@ void console()
 						std::getline(std::cin, consoleVal); 
 						if (consoleVal.find("io") != consoleVal.npos) //pescamos um input até ele ser direcionado ao console
 						{
-							interrupcao = 5; //sinalizamos que o pedido foi tratado
+							interrupcao = 2; //sinalizamos que o pedido foi tratado
 							pedidoPronto = pedido; //sinalizamos que o pedido foi tratado
 							filaPedidos.pop(); //e tiramos ele da fila
 						
@@ -585,7 +562,7 @@ void console()
 				}
 
 			}
-			mut.unlock();//para controlar a concorrência
+			//mut.unlock();//para controlar a concorrência
 			tempo = 0.0;
 
 		if (desliga == true)
@@ -594,21 +571,29 @@ void console()
 }
 void syscall()
 {
+	pedidoConsole pedido;
 
-
-
-
-	if (interrupcao == 4 || interrupcao == 5) //se o console esta sinalizando fim de um pedido
+	//if (interrupcao == 1 || interrupcao == 2) //se o nosso syscall tem algo para nos pedir
 	{
-		delayCatcher = interrupcao; //guardamos o tipo de pedido que foi tratado
-		delay = true; //atrasaremos sua resolução  para tratarmos depois
-	}
-	else
-	{
-		interrupcao = regBank[UINS.getR1()]; // Read/Write
-		parametro = regBank[UINS.getR2()]; //Endereco
-		baseRequest = running.getBase(); //endereco base do processo, para calcularmos o endereco fisico
-		idRequest = running.getID(); //id do processo, para encontrarmos ele depois
-	}
+		pedido = pedidoConsole(regBank[UINS.getR2()], regBank[UINS.getR1()], running.getID(), running.getBase()); //criamos um novo pedido
 
+		salvaContexto(running); //salvamos contexto
+		running.setEstado(BLOCKED);
+		filaPedidos.push(pedido); //mandamos o pedido
+
+		blocked.push_back(running); //e bloqueamos running
+		if (ready.size() != 0) //se depois de bloquearmos o processo existe um processo pronto para executar 
+		{
+			//fazemos o escalonamento
+			running = ready.front();
+			restauraContexto(running);
+			ready.pop_front();
+
+		}
+		else
+		{
+			wait = true; //se nao, trancamos a CPU
+
+		}
+	}
 }
