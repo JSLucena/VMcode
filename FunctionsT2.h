@@ -8,6 +8,7 @@
 #include<chrono>
 #include <thread>
 #include <mutex>
+#include <sstream>
 #include "MICROINS.h"
 #include "Functions.h"
 #include "FilaIO.h"
@@ -39,19 +40,34 @@ bool processEnd = false; //variavel que indica o fim de um processo, para nao ad
 
 //############################################Trabalho 3####################################
 std::string escolha; //variavel de controle para os comandos do shell
-std::list<ProcessControlBlock> blocked;
-std::queue<pedidoConsole> filaPedidos;
-std::mutex mut;
-int parametro;
-bool wait = false;
-pedidoConsole pedidoPronto;
+std::list<ProcessControlBlock> blocked; //lista de processos bloqueados
+std::queue<pedidoConsole> filaPedidos; // lista de request para o console de IO
+std::mutex mut; //mutex, para impedir que aconteçam sobreescritas no valor interrupcao"
+int parametro; // Read ou Write
+bool wait = false; //variavel de controle, para caso nao exista nenhum processo apto a rodar tranca a CPU
+pedidoConsole pedidoPronto; //pedido atendido pelo console
+std::string consoleVal; //buffer de input do console
 
-void rotinaTratamentoIO();
-void console();
-void syscall();
+void rotinaTratamentoIO(); //funcao que trata IO
+void console(); //thread da console
+void syscall(); // funcao que trata o TRAP
+
+
+int baseRequest = 0; // variavel para ser colocada no pedido a ser enviado à fila
+int idRequest = 0; // variavel para ser colocada no pedido a ser enviado à fila
+int delayCatcher = 0; //para impedir que aconteçam sobreescritas no valor interrupcao, faz com que a interrupcao de termino de tratamento seja tratada após adicionarmos um request pendente à fila
+bool delay = false; //para impedir que aconteçam sobreescritas no valor interrupcao, faz com que a interrupcao de termino de tratamento seja tratada após adicionarmos um request pendente à fila
+
+std::mutex prontos, intt;
+
+
+
 //############################################Trabalho 3####################################
 
 
+
+//#################### Gerente De ################################
+//#################### Memoria ###################################
 ProcessControlBlock criaPCB(int particao) //cria nosso objeto PCB, com base, limite, estado inicial e ID
 {
 	ProcessControlBlock pcb = ProcessControlBlock(PART_SIZE * particao, PART_SIZE * (particao + 1) - 1, READY, id);
@@ -86,6 +102,7 @@ void carrega(int it) //carrega o arquivo na particao de memoria do processo
 void criacaoProcesso(int particao) //funcao de criacao do processo
 {
 	alocaParticao(particao); //aloca na particao
+	prontos.lock();
 	if (programa == "p2.txt" || programa == "fat.txt")
 	{
 		std::cout << "Este programa precisa de um input do usuario, digite o valor abaixo: " << std::endl;
@@ -103,6 +120,7 @@ void criacaoProcesso(int particao) //funcao de criacao do processo
 		
         ready.pop_front(); //e corta da lista
     }
+	prontos.unlock();
 }
 int criaProcesso() //funcao que chama a criacao do processo
 {
@@ -137,7 +155,12 @@ int criaProcesso() //funcao que chama a criacao do processo
 
 
 }
+//#######################################################
+//#######################################################
 
+
+//################### Gerente de ########################
+//################### Processos #########################
 void salvaContexto(ProcessControlBlock  &pcb) //funcao que salva PC e regs no PCB
 {
 	int ilocal = 0;
@@ -156,11 +179,18 @@ void restauraContexto(ProcessControlBlock &pcb) //funcao que restaura os regs e 
 	
 	pcb.setEstado(RUNNING);
 }
+
+
+
+
 void rotinaTratamentoTimer() //rotina de tratamento de interrupcao por timeout
 {
+
+	if (startExec == true && ready.size() != 0)
+		std::cout << "CPU timed out " << std::endl;
 	salvaContexto(running);
 	
-//	running.setEstado(READY);
+
 	
 	if (processEnd == true) //se um processo terminar
 	{
@@ -175,6 +205,7 @@ void rotinaTratamentoTimer() //rotina de tratamento de interrupcao por timeout
 			desliga = false;
 			wait = false;
 			interrupcao = 0; //depois ele tira a flag de interrupcao
+		
 			return;
 		}
 		else //se estiver ele desaloca e bloqueia a execucao da cpu
@@ -184,16 +215,19 @@ void rotinaTratamentoTimer() //rotina de tratamento de interrupcao por timeout
 			wait = true;
 			running.setEstado(BLOCKED);
 			interrupcao = 0; //depois ele tira a flag de interrupcao
+		
 			return;
 		}
 	}
 	else //se o time slice do processo acabou
 	{
+		prontos.lock();
 		if (running.getEstado() != BLOCKED)
 		{
 			running.setEstado(READY);
 			ready.push_back(running); //ele joga de volta na fila
 		}
+		prontos.unlock();
 		if (ready.size() != 0)
 		{
 			//e escalona o proximo se a fila nao estiver vazia
@@ -203,6 +237,7 @@ void rotinaTratamentoTimer() //rotina de tratamento de interrupcao por timeout
 			ready.pop_front();
 			interrupcao = 0; //depois ele tira a flag de interrupcao
 			desliga = false;
+		
 			return;
 		}
 		else
@@ -211,19 +246,72 @@ void rotinaTratamentoTimer() //rotina de tratamento de interrupcao por timeout
 			{
 				interrupcao = 0; //depois ele tira a flag de interrupcao
 				wait = false;
+	
 				return;
 			}
 		}
 		interrupcao = 0; //depois ele tira a flag de interrupcao
-		//wait = false;
-		//restauraContexto(running);
-
-
+	
 		
 		return;
 	}
 }
-#endif
+
+
+
+//#######################################################
+//#######################################################
+
+
+
+//##################### CPU #############################
+//#######################################################
+void timer()
+{
+
+	std::chrono::time_point<std::chrono::system_clock> start, end;
+	std::chrono::duration<double> elapsed_seconds;
+	double tempo = 0.0;
+	while (1)
+	{
+
+		if (interrupcao == 0)
+		{
+			if (tempo >= 0.001) //depois que o tempo passar de 1ms ele liga o flag de interrupcao
+			{
+
+
+				intt.lock();
+				if (interrupcao == 0)
+				{
+
+					interrupcao = 3;
+					tempo = 0.0;
+
+
+				}
+				intt.unlock();
+
+			}
+			else
+			{
+				start = std::chrono::system_clock::now(); //nosso timer subtrai o horario da batida final do clock com a batida de inicio do clock
+				end = std::chrono::system_clock::now();
+				elapsed_seconds = end - start;
+				tempo += elapsed_seconds.count(); //e vai contando este tempo ate que de 1ms
+
+			}
+		}
+
+		if (desliga == true)
+			break;
+
+	}
+}
+
+
+
+
 void CPU()
 {
 	while (1)
@@ -239,7 +327,7 @@ void CPU()
 			
 			else
 			{
-				mut.lock();
+			
 				if (wait == false && running.getEstado() == RUNNING)
 				{
 
@@ -249,8 +337,7 @@ void CPU()
 					UINS.setINST(decode(instReg)); //decodificacao
 					UINS.setR1(GetR1(instReg, UINS.getINST())); //decodificao
 					UINS.setR2(getR2_IMM(instReg, UINS.getINST())); //decodificacao
-				//	std::cout << "Processo:" << running.getID() << " " << UINS.getINST() << " " << UINS.getR1() << " " << UINS.getR2() << std::endl;
-
+					
 					//operacoes com a memoria
 					if (UINS.getINST() == "LDD" || UINS.getINST() == "STD")
 					{
@@ -285,16 +372,8 @@ void CPU()
 
 
 					}
-					if (UINS.getINST() == "TRAP")
-					{
-					//	interrupcao = regBank[UINS.getR1()];
-					//	parametro = regBank[UINS.getR2()];
-						//std::cout << interrupcao << "::::::" << parametro << std::endl;
+					
 
-						//	limite = running.getLimite();
-						syscall();
-
-					}
 					//operacoes de salto
 					if (Branch(regBank[UINS.getR1()], regBank[UINS.getR2()], UINS.getINST()))
 						if (UINS.getINST() == "JMP")
@@ -303,12 +382,20 @@ void CPU()
 							pc = regBank[UINS.getR1()] + running.getBase(); //jumps e branches dependentes da particao
 					else
 						pc++;
+
+					if (UINS.getINST() == "TRAP")
+					{
+
+						syscall();
+
+					}
 					//###############################
-				//	std::cout << pc << "::::::" << regBank[2] << "!!!!!! " << ready.size() << " xxx " << blocked.size() << " ttt ";
+					//std::cout << pc << "::::::" << regBank[2] << "!!!!!! " << ready.size() << " xxx " << blocked.size() << " ttt ";
 
-
+			
+				//	std::cout << "Processo:" << running.getID() << " " << UINS.getINST() << " " << UINS.getR1() << " " << UINS.getR2() << std::endl;
 				}
-				mut.unlock();
+			
 
 			}
 			if (desliga == true) //flag ativada depois de usar o comando [s] para desligar a maquina
@@ -316,44 +403,12 @@ void CPU()
 		}
 	}
 }
-void timer()
-{
-	
-	std::chrono::time_point<std::chrono::system_clock> start, end;
-	std::chrono::duration<double> elapsed_seconds;
-	double tempo = 0.0;
-	while (1)
-	{
-	
-		if (interrupcao == 0 )
-		{
-			if (tempo >= 0.001) //depois que o tempo passar de 1ms ele liga o flag de interrupcao
-			{
-				if (startExec == true && ready.size() != 0)
-					std::cout << "CPU timed out " << std::endl;
-				if (interrupcao == 0)
-				{
-					interrupcao = 3;
-					tempo = 0.0;
-				}
+//#######################################################
+//#######################################################
 
 
-			}
-			else
-			{
-				start = std::chrono::system_clock::now(); //nosso timer subtrai o horario da batida final do clock com a batida de inicio do clock
-				end = std::chrono::system_clock::now(); 
-				elapsed_seconds = end - start;
-				tempo += elapsed_seconds.count(); //e vai contando este tempo ate que de 1ms
-
-			}
-		}
-
-		if (desliga == true)
-			break;
-	
-	}
-}
+//##################### Shell ###########################
+//#######################################################
 void shell()
 {
 	while (1)
@@ -432,168 +487,163 @@ void shell()
 		}
 	}
 }
+//#######################################################
+//#######################################################
+
+
+
+
+//##################### Modulo Input/Output #############
+//#######################################################
 void rotinaTratamentoIO()
 {
 	pedidoConsole pedido;
-	int aux1, aux2;
+	int aux1, aux2;	
 	std::list<ProcessControlBlock>::iterator it;
-	if (interrupcao == 1 || interrupcao == 2)
-	{
-		pedido = pedidoConsole(parametro, interrupcao, running.getID(), running.getBase());
-		salvaContexto(running);
-		running.setEstado(BLOCKED);
-		filaPedidos.push(pedido);
-		std::cout << filaPedidos.size() << "pedidos IO" << std::endl;
-		blocked.push_back(running);
-			if (ready.size() != 0)
-			{
-			//	salvaContexto(running);
-				//running.setEstado(BLOCKED);
-				running = ready.front();
-					restauraContexto(running);
-					ready.pop_front();
-					//wait = false;
-			}
-			else
-			{
-				wait = true;
-				//running = nullptr;
-				//restauraContexto(running);
 
-			}
-	}
-	if (interrupcao == 4)
-	{
-	//	pedido = filaPedidos.front();
-	//	if(filaPedidos.size() != 0)
-		//	filaPedidos.pop();
+	
 
-		//running.setEstado(READY);
-	//	ready.push_back(running);
-		
-		//restauraContexto(running);
-		//salvaContexto(running);
-		//running.setEstado(READY);
-		//ready.push_back(running);
+	
+
+	if (interrupcao == 1 ||  interrupcao == 2) //se nosso console tem algum pedido pronto
+	{
+	
 		for (it = blocked.begin(); it != blocked.end(); it++)
 		{
-			if (pedidoPronto.getIDProcesso() == it->getID())
+			
+			if (pedidoPronto.getIDProcesso() == it->getID()) //procuramos o processo que pediu o IO
 			{
-
-				ready.push_back(*it);
-				//	restauraContexto(running);
+				prontos.lock();
+				ready.push_back(*it); //e colocamos ele de volta na fila de prontos
+			
 
 				blocked.erase(it);
 
-				std::cout << "achei";
+				prontos.unlock();
 				break;
 			}
 		}
-		if (ready.size() == 1)
+		// Este snippet é para consertarmos um bug onde caso só existisse 1 processo ele estava se multiplicando infinitamente.
+
+		if (ready.size() == 1) // se a fila so tiver um processo
 		{
-			std::cout << ready.front().getID();
-			std::cout << running.getID();
+			
 			aux1 = ready.front().getID();
 			aux2 = running.getID();
-			if (aux1 == aux2)
+			
+			if (aux1 == aux2) // e os dois tiverem PIDS iguais
 			{
-				running = ready.front();
-				ready.pop_front();
-				restauraContexto(running);
-				//wait = false;
-
-					//	wait = false;
+				//encontramos o farsante
+				ready.pop_front(); // matamos ele
+				restauraContexto(running); //e ficamos com o verdadeiro
+				
 			}
 		}
-		//else
-		//	running.setEstado(RUNNING);
-		//{
-			//salvaContexto(running);
-			//running.setEstado(READY);
-			//ready.push_back(running);
-		//	running = ready.front();
-		//	ready.pop_front();
-		//	restauraContexto(running);
-	//	}
-			
-		 
-		//wait = false;
+		//////////////////////////////////////////////
 	}
 	interrupcao = 0;
+
 }
 void console()
 {
 	pedidoConsole pedido;
 	std::chrono::time_point<std::chrono::system_clock> start, end;
 	std::chrono::duration<double> elapsed_seconds;
+	int aux;
+	std::string aux2;
+	
 	double tempo = 0.0;
 	while (1)
 	{
-	//	if (tempo >= 0.002)
-		//{
-			if (interrupcao == 0)
+	
+		intt.lock();//para controlar a concorrência
+			if (interrupcao == 0) //so podemos tratar se nao estivermos escalonando nem tratando outra interrupcao
 			{
-				if (filaPedidos.size() != 0)
+				if (filaPedidos.size() != 0) //enquanto tiverem pedidos, o console pega e vai tratando
 				{
 					pedido = filaPedidos.front();
-					filaPedidos.pop();
-					if (pedido.getTipo() == 1)
+				
+					if (pedido.getTipo() == 1) //se for leitura da memoria para escrita no terminal
 					{
-						mut.lock();
+						interrupcao = 1; //sinalizamos que o pedido foi tratado
+						pedidoPronto = pedido; //sinalizamos que o pedido foi tratado
+						filaPedidos.pop(); //e tiramos ele da fila
+						
 						std::cout << "Processo " << pedido.getIDProcesso() << " pediu uma leitura da memoria" << std::endl;
 						std::cout << "Valor da posicao " << pedido.getParametro() + pedido.getBase() << ": " << memoriastart[pedido.getParametro() + pedido.getBase()] << std::endl;
-						interrupcao = 4;
-						pedidoPronto = pedido;
-						mut.unlock();
+					
+					}
+					else if (pedido.getTipo() == 2) //se for leitura do console para escrita na memoria
+					{
+						std::cout << "Processo " << pedido.getIDProcesso() << " pediu uma escrita na memoria" << std::endl;
+						std::cout << "Digite o valor: ";
+						
+						std::getline(std::cin, consoleVal); 
+						if (consoleVal.find("io") != consoleVal.npos) //pescamos um input até ele ser direcionado ao console
+						{
+							interrupcao = 2; //sinalizamos que o pedido foi tratado
+							pedidoPronto = pedido; //sinalizamos que o pedido foi tratado
+							filaPedidos.pop(); //e tiramos ele da fila
+						
+							aux2 = consoleVal.substr(consoleVal.find(' ')); //cortamos a string inicial para deixar só o numero
+							
+							aux2 = aux2.erase(0, 1); //tiramos o espaco em branco
+						
+							std::istringstream aux3(aux2);
+							aux3 >> aux; //e botamos da stringstream para um inteiro
+							memoriastart[pedido.getParametro() + pedido.getBase()] = aux;
+							
+						
+							
+						
+
+						}
+						else
+						{
+							
+							interrupcao = 0;
+							
+						
+						}
+						
 					}
 				}
 
 			}
+			intt.unlock();//para controlar a concorrência
 			tempo = 0.0;
-		//}
-	//	else
-	//	{
-	//		start = std::chrono::system_clock::now(); //nosso timer subtrai o horario da batida final do clock com a batida de inicio do clock
-		//		end = std::chrono::system_clock::now(); 
-		//		elapsed_seconds = end - start;
-	//		tempo += elapsed_seconds.count(); //e vai contando este tempo ate que de 1ms
-	//	}
+
 		if (desliga == true)
 			break;
 	}
 }
 void syscall()
 {
-	int aux = 0;
-	int aux2 = 0;
-	std::string lastINST = "";
-	//while (1)
-	//{
-		if (UINS.getINST() == "TRAP")
+	pedidoConsole pedido;
+
+	{
+		pedido = pedidoConsole(regBank[UINS.getR2()], regBank[UINS.getR1()], running.getID(), running.getBase()); //criamos um novo pedido
+
+		salvaContexto(running); //salvamos contexto
+		running.setEstado(BLOCKED);
+		filaPedidos.push(pedido); //mandamos o pedido
+
+		blocked.push_back(running); //e bloqueamos running
+		if (ready.size() != 0) //se depois de bloquearmos o processo existe um processo pronto para executar 
 		{
-			if (interrupcao == 0)
-			{
-				interrupcao = regBank[UINS.getR1()];
-				parametro = regBank[UINS.getR2()];
-			}
-			else
-			{
-				aux = regBank[UINS.getR1()];
-				aux2 = regBank[UINS.getR2()];
-				lastINST = UINS.getINST();
-			}
-		}
-		else if (lastINST == "TRAP")
-		{
-			interrupcao = aux;
-			parametro = aux2;
+			//fazemos o escalonamento
+			running = ready.front();
+			restauraContexto(running);
+			ready.pop_front();
+
 		}
 		else
 		{
-			interrupcao = 0;
-			parametro = 0;
+			wait = true; //se nao, trancamos a CPU
+
 		}
-		//if (desliga == true)
-			//break;
-//	}
+	}
 }
+//#######################################################
+//#######################################################
+#endif
