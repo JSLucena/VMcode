@@ -64,11 +64,15 @@ std::mutex prontos, intt;
 
 //#########################################################################################
 
+
+
+
 //####################################TRABALHO 4###########################################
-bool Frames[64];
 
-
-
+bool frames[64]; //vetor de frames alocados, falso significa que nao estao alocados
+int logicToPhysic(int logAdd); //funcao de decodificacao de endereco logico para fisico
+bool killProc = false, noProc = false; //killproc eh uma variavel que indica que o processo precisa ser morto, noproc significa que o processo precisa ser morto, mas nao ha nenhum processo para substitui-lo na fila(((necessario por causa de escolhas de design)))
+void kill(); //chamada que mata o processo
 
 //#################### Gerente De ################################
 //#################### Memoria ###################################
@@ -79,17 +83,23 @@ ProcessControlBlock criaPCB(int particao) //cria nosso objeto PCB, com base, lim
 }
 
 
-void alocaParticao(int it) //funcao que aloca a particao, colocando seu valor em true e incrementando o ID
+int alocaFrame() //funcao que aloca a particao, colocando seu valor em true e incrementando o ID
 {
-	particoes[it] = true;
-	id++;
+	for(int i = 0;i < 64;i++) //procura o primeiro frame desalocado
+		if (frames[i] == false)
+		{
+			frames[i] = true;
+			return i; // e retorna ele para o processo que pediu
+		}
+	
 }
 void carrega(int it) //carrega o arquivo na particao de memoria do processo
 {
-	ptr = &memoriastart[PART_SIZE * it];
+	ptr = &memoriastart[PAG_SIZE * it];
 	while (arq)
 	{
-
+		if (ptr == &memoriastart[PAG_SIZE * (it + 1)])
+			break;
 		arq >> arqbuffer;
 
 		if (!arq)
@@ -99,36 +109,28 @@ void carrega(int it) //carrega o arquivo na particao de memoria do processo
 		ptr++;
 
 	}
-	arq.close();
+	
 
-	ptr = memoriastart;
+	
 }
-void criacaoProcesso(int particao) //funcao de criacao do processo
+void criacaoProcesso(int pagina, ProcessControlBlock &pcb) //funcao de criacao do processo
 {
-	alocaParticao(particao); //aloca na particao
-	prontos.lock();
-	if (programa == "p2.txt" || programa == "fat.txt")
-	{
-		std::cout << "Este programa precisa de um input do usuario, digite o valor abaixo: " << std::endl;
-		std::cin >> input;
-		memoriastart[100 + PART_SIZE * particao] = input;
-	}
-	carrega(particao); //carrega na particao
-	ready.push_back(criaPCB(particao)); //joga o processo novo na fila deprontos
+	int frameid;
+	frameid = alocaFrame(); //aloca no frame
+	std::cout << "pagina: " << pagina << "# Frame: " << frameid << std::endl;
+	pcb.pageTable.push_back(Pagina(pagina, frameid)); //jogamos na tabela de paginas a pagina com seu id e com o id do frame relacionado a ela
 	
 	
-    if(running.getLimite() == 0) //se nao existir nenhum running(limite = 0)
-    {
-        running = ready.front(); //ele pega o primeiro da lista
-        pc = running.getPC(); //ajusta o PC para la
-		
-        ready.pop_front(); //e corta da lista
-    }
-	prontos.unlock();
+	carrega(frameid); //carrega no frame
+	
 }
 int criaProcesso() //funcao que chama a criacao do processo
 {
 	int it;
+	int size;
+	int disponiveis = 0, pagecount = 0;
+	std::list<Pagina>::iterator itt;
+	ProcessControlBlock aux;
     if (programa.find(".txt") != std::string::npos)
         ;
     else programa = programa + ".txt";
@@ -145,18 +147,49 @@ int criaProcesso() //funcao que chama a criacao do processo
 		std::cout << "Erro ao abrir o arquivo" << std::endl;
 		return -2;
 	}
-	for (it = 0; it < 8; it++)
+
+	for (int i = 0; i < 64; i++)
+		if (frames[i] == false)
+			disponiveis++; //calculamos quantos frames temos disponiveis
+
+	arq >> size; //a primeira linha do codigo eh a quantidade de frames necessarios para alocacao
+
+	if (size < disponiveis) //se o programa couber no espaco disponivel
 	{
-		if (particoes[it] == false)
+		aux = ProcessControlBlock(); //criamos nosso processo
+		for (it = 0; it < size; it++)
 		{
-			criacaoProcesso(it); //aqui
 			
-			return 1;
+				criacaoProcesso(it, aux); //carregamos e adicionamos cada pagina em separado, com id dela == it
+				
+				
 		}
+		
+		aux.setLimite(PAG_SIZE * aux.pageTable.size() - 1); //depois setamos o limite do nosso processo
+		aux.setBase(PAG_SIZE * aux.pageTable.front().getFrameID()); //a base
+		aux.setPC(aux.getBase()); //o pc, para comecarmos no lugar certo
+		ptr = memoriastart; //botamos nosso ponteiro de volta ao inicio da memoria, se quisermos adicionar outro processo
+		prontos.lock();
+		aux.setID(id); //setamos o id do processo
+		id++; 
+		ready.push_back(aux); //joga o processo novo na fila deprontos
+
+
+		if (running.getLimite() == 0) //se nao existir nenhum running(limite = 0)
+		{
+			running = ready.front(); //ele pega o primeiro da lista
+			pc = running.getPC(); //ajusta o PC para la
+
+			ready.pop_front(); //e corta da lista
+		}
+		prontos.unlock();
+		std::cout << size << " Paginas alocadas na seguinte configuracao: " << std::endl;
+		arq.close();
+		return 1;
 	}
 	std::cout << "Nao ha memoria suficiente" << std::endl;
 	return -1;
-
+	
 
 }
 //#######################################################
@@ -196,7 +229,7 @@ void rotinaTratamentoTimer() //rotina de tratamento de interrupcao por timeout
 	
 
 	
-	if (processEnd == true) //se um processo terminar
+	if (processEnd == true || noProc == true) //se um processo terminar
 	{
 		processEnd = false;
 		if (ready.size() != 0 ) //ele testa se a fila nao esta vazia
@@ -318,6 +351,8 @@ void timer()
 
 void CPU()
 {
+	int address;
+	int addressSTX;
 	while (1)
 	{
 		
@@ -332,7 +367,7 @@ void CPU()
 			else
 			{
 			
-				if (wait == false && running.getEstado() == RUNNING)
+				if (wait == false && running.getEstado() == RUNNING && noProc == false)
 				{
 
 
@@ -342,33 +377,43 @@ void CPU()
 					UINS.setR1(GetR1(instReg, UINS.getINST())); //decodificao
 					UINS.setR2(getR2_IMM(instReg, UINS.getINST())); //decodificacao
 					
-					//operacoes com a memoria
+					//#########################   OPERACOES MEMORIA   #####################################
+					
 					if (UINS.getINST() == "LDD" || UINS.getINST() == "STD")
 					{
-
-
-						if (UINS.getINST() == "STX")
-							MemOps(regBank[UINS.getR2()], UINS.getINST(), running.getBase() + UINS.getR1(), memoriastart);
-						else
-							MemOps(regBank[UINS.getR1()], UINS.getINST(), running.getBase() + UINS.getR2(), memoriastart);
+							address = logicToPhysic(UINS.getR2()); //decodificamos o endereco logico para fisico
+						if (killProc == false) //se o endereco for valido ele continua
+						{
+							if (UINS.getINST() == "STX")
+								MemOps(regBank[UINS.getR2()], UINS.getINST(), address, memoriastart);
+							else
+								MemOps(regBank[UINS.getR1()], UINS.getINST(), address, memoriastart);
+						}
 					}
-					else
+					else if(UINS.getINST()== "LDX" || UINS.getINST()=="STX")
 					{
-
-
-						if (UINS.getINST() == "STX")
-							MemOps(regBank[UINS.getR2()], UINS.getINST(), running.getBase() + regBank[UINS.getR1()], memoriastart);
+						if(UINS.getINST() == "STX")
+							address = logicToPhysic(regBank[UINS.getR1()]);  //decodificamos o endereco logico para fisico, nosso stx foi implementado ao contrario
 						else
-							MemOps(regBank[UINS.getR1()], UINS.getINST(), running.getBase() + regBank[UINS.getR2()], memoriastart);
+							address = logicToPhysic(regBank[UINS.getR2()]); //decodificamos o endereco logico para fisico
+						
+						if (killProc == false)//se o endereco for valido ele continua
+						{
+							if (UINS.getINST() == "STX")
+								MemOps(regBank[UINS.getR2()], UINS.getINST(), address, memoriastart);
+							else
+								MemOps(regBank[UINS.getR1()], UINS.getINST(), address, memoriastart);
+						}
+					
 					}
-					//###############################
+					//##########################################################################################
 
-					//operacoes com a ULA
+					//#############################    operacoes com a ULA    ##################################
 					if (UINS.getINST() == "LDI" || UINS.getINST() == "ADDI" || UINS.getINST() == "SUBI" || UINS.getINST() == "ANDI" || UINS.getINST() == "ORI")
 						ULA(regBank[UINS.getR1()], UINS.getR2(), UINS.getINST());
 					else
 						ULA(regBank[UINS.getR1()], regBank[UINS.getR2()], UINS.getINST());
-					//###############################
+					//#########################################################################################
 					if (UINS.getINST() == "STOP") //se o processo terminar ele liga o flag de interrupcao e o flag de fim de processo
 					{
 						interrupcao = 3;
@@ -378,12 +423,21 @@ void CPU()
 					}
 					
 
-					//operacoes de salto
+					//####################################   operacoes de salto   ##############################
+					
 					if (Branch(regBank[UINS.getR1()], regBank[UINS.getR2()], UINS.getINST()))
 						if (UINS.getINST() == "JMP")
-							pc = UINS.getR2() + running.getBase(); //jumps e branches dependentes da particao
+						{
+							address = logicToPhysic(UINS.getR2()); //decodificamos o endereco logico para fisico
+							if(killProc == false) //se o endereco for valido ele salta
+								pc = address; //jumps e branches dependentes da particao
+						}
 						else
-							pc = regBank[UINS.getR1()] + running.getBase(); //jumps e branches dependentes da particao
+						{
+							address = logicToPhysic(regBank[UINS.getR1()]); //decodificamos o endereco logico para fisico
+							if(killProc == false) //se o endereco for valido ele salta
+								pc = address; //jumps e branches dependentes da particao
+						}
 					else
 						pc++;
 
@@ -393,11 +447,13 @@ void CPU()
 						syscall();
 
 					}
-					//###############################
+					if (killProc == true)
+						kill();
+					//#############################################################################################
 					//std::cout << pc << "::::::" << regBank[2] << "!!!!!! " << ready.size() << " xxx " << blocked.size() << " ttt ";
 
 			
-				//	std::cout << "Processo:" << running.getID() << " " << UINS.getINST() << " " << UINS.getR1() << " " << UINS.getR2() << std::endl;
+					std::cout << "Processo:" << running.getID() << " " << UINS.getINST() << " " << UINS.getR1() << " " << UINS.getR2() << std::endl;
 				}
 			
 
@@ -574,7 +630,7 @@ void console()
 						filaPedidos.pop(); //e tiramos ele da fila
 						
 						std::cout << "Processo " << pedido.getIDProcesso() << " pediu uma leitura da memoria" << std::endl;
-						std::cout << "Valor da posicao " << pedido.getParametro() + pedido.getBase() << ": " << memoriastart[pedido.getParametro() + pedido.getBase()] << std::endl;
+						std::cout << "Valor da posicao " << pedido.getParametro() << ": " << memoriastart[pedido.getParametro()] << std::endl;
 					
 					}
 					else if (pedido.getTipo() == 2) //se for leitura do console para escrita na memoria
@@ -595,7 +651,7 @@ void console()
 						
 							std::istringstream aux3(aux2);
 							aux3 >> aux; //e botamos da stringstream para um inteiro
-							memoriastart[pedido.getParametro() + pedido.getBase()] = aux;
+							memoriastart[pedido.getParametro()] = aux;
 							
 						
 							
@@ -626,7 +682,11 @@ void syscall()
 	pedidoConsole pedido;
 
 	{
-		pedido = pedidoConsole(regBank[UINS.getR2()], regBank[UINS.getR1()], running.getID(), running.getBase()); //criamos um novo pedido
+		int address = 0;
+		address = logicToPhysic(regBank[UINS.getR2()]); //verificamos se o endereco do trap esta dentro do limite
+		if (killProc == true) //se nao estiver, retorna sem enfileirar o pedido
+			return;
+		pedido = pedidoConsole(address, regBank[UINS.getR1()], running.getID(), running.getBase()); //criamos um novo pedido
 
 		salvaContexto(running); //salvamos contexto
 		running.setEstado(BLOCKED);
@@ -650,4 +710,47 @@ void syscall()
 }
 //#######################################################
 //#######################################################
+
+
+
+int logicToPhysic(int logAdd)
+{
+	std::list<Pagina>::iterator it;
+	int aux, offset;
+	aux = logAdd / PAG_SIZE;
+	offset = logAdd % PAG_SIZE;
+	if (aux > running.pageTable.size()) //se o endereco nao fizer parte das paginas do processo
+		killProc = true; //prepara para matar ele
+	else
+	{
+		for (it = running.pageTable.begin(); it != running.pageTable.end(); it++) //busca pela frame da pagina que precisamos
+		{
+			if (it->getID() == aux) //quando encontramos
+			{
+				return (PAG_SIZE * it->getFrameID() + offset); //retornamos endereco da memoria fisica
+			}
+		}
+
+	killProc = true; //se por algum motivo nao encontramos a pagina que estavamos procurando, algo deu errado, entao: matar processo
+	return -1;
+	}
+}
+void kill()
+{
+	if (ready.size() != 0)
+	{
+		std::cout << "Processo " << running.getID() << " foi morto" << std::endl;
+		//pegamos o proximo processo da lista e botamos ele como running sem salvar o contexto do processo antigo
+		running = ready.front(); 
+		restauraContexto(running); 
+		ready.pop_front();
+	}
+	else
+	{
+		//esse snippet esta aqui por causa de uma escolha de design feita la no inicio. Como nao usamos ponteiros, nao temos como deixar o running em um estado nulo. entao trancamos a execucao do processo se ele for o unico.
+		std::cout << "Processo invalido, suas operacoes nao terao efeito na execucao" << std::endl;
+		noProc = true;
+	}
+	killProc = false;
+}
 #endif

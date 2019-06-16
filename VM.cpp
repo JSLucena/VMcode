@@ -25,7 +25,7 @@ int main()
 		memoriastart = new unsigned int[tamMemoria];
 		ptr = memoriastart;
 		for (int i = 0; i < 64; i++)
-			Frames[i] = false;
+			frames[i] = false;
 
 		limpamem(ptr, tamMemoria);
 		std::thread tempo(timer);
