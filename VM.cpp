@@ -2,7 +2,7 @@
 #include <string>
 #include <fstream>
 
-#include "FunctionsT2.h"
+#include "FunctionsT4.h"
 #include "Functions.h"
 
 
@@ -58,7 +58,8 @@ A fila ready eh protegida para leitura e pops, pois ela sempre pega a primeira p
 
 //Modulo de gerencia de processos:
 /*
-O gerente de processos cuida do escalonamento round robin entre o processo running e os processos da fila ready
+O gerente de processos cuida do escalonamento round robin entre o processo running e os processos da fila ready. Ele cuida tambem da parte de matar um processo que realizou um acesso
+indevido e escalonar outro no lugar dele
 Ele funciona sempre que o timeslice acaba, ou um processo acaba. Salvando o contexto do PCB running, pegando o primeiro processo da fila ready e restaurando seu contexto para dentro da CPU
 --------------------------Estruturas Compartilhadas Utilizadas----------------------------------------------
 O gerente de processos funciona dentro da thread da CPU, ja que o timeslice eh sinalizado por uma interrupcao e eh a CPU que trata as interrupcoes
@@ -76,6 +77,7 @@ A variavel de interrupcao, compartilhada com o timer, com a CPU e com o Console,
 //Modulo da CPU:
 /*
 A nossa CPU eh a responsavel pelas chamadas de sistema, tratamento de interrupcoes, e execucao de instrucoes do nosso programa
+Com a refatoracao da estrutura de memoria em paginas, agora a CPU tem um modulozinho que pega um endereco logico do nosso programa e transforma em um endereco fisico da nossa memoria
 -----------------------------------Estruturas Compartilhadas Utilizadas----------------------------------------------
 O Modulo da CPU eh composto por uma thread dela, e uma thread com o nosso timer para escalonamento
 A CPU utiliza: 

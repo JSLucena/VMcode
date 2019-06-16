@@ -1,5 +1,8 @@
 #include "Frame.h"
 
+//Feito por Joaquim Lucena e Christian Bobsin
+
+
 Frame::Frame(int b, int l, int i)
 {
 	base = b;

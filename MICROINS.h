@@ -4,6 +4,9 @@
 #include <iostream>
 #include <string>
 
+//Feito por Joaquim Lucena e Christian Bobsin
+
+
 class Uins
 {
 protected:

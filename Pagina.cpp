@@ -1,5 +1,7 @@
 #include "Pagina.h"
 
+//Feito por Joaquim Lucena e Christian Bobsin
+
 Pagina::Pagina( int i, int f)
 {
 

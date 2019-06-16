@@ -1,6 +1,11 @@
 #include "MICROINS.h"
 #ifndef _MICROINS_CPP
 #define _MICROINS_CPP
+
+
+//Feito por Joaquim Lucena e Christian Bobsin
+
+
 void Uins::setR1(unsigned int reg)
 {
 	r1 = reg;

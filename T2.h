@@ -7,6 +7,11 @@
 #include <fstream>
 #define PART_SIZE 128
 #define PAG_SIZE 16
+
+
+//Feito por Joaquim Lucena e Christian Bobsin
+
+
 enum state {READY,RUNNING,BLOCKED};
 class ProcessControlBlock
 {

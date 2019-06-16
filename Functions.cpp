@@ -1,5 +1,6 @@
 #include "Functions.h"
 
+//Feito por Joaquim Lucena e Christian Bobsin
 
 unsigned int GetR1(unsigned int instReg, std::string inst)
 {
