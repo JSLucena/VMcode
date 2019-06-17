@@ -24,7 +24,7 @@ unsigned int i = 0;
 unsigned int tamMemoria = 1024;
 
 int interrupcao = 0;
-unsigned int* memoriastart, * ptr;
+unsigned int* memoriastart, *ptr;
 int posicao;
 std::string  instrucao, programa;
 
@@ -89,13 +89,13 @@ ProcessControlBlock criaPCB(int particao) //cria nosso objeto PCB, com base, lim
 
 int alocaFrame() //funcao que aloca a particao, colocando seu valor em true e incrementando o ID
 {
-	for(int i = 0;i < 64;i++) //procura o primeiro frame desalocado
+	for (int i = 0; i < 64; i++) //procura o primeiro frame desalocado
 		if (frames[i] == false)
 		{
 			frames[i] = true;
 			return i; // e retorna ele para o processo que pediu
 		}
-	
+
 }
 void carrega(int it) //carrega o arquivo na particao de memoria do processo
 {
@@ -113,9 +113,9 @@ void carrega(int it) //carrega o arquivo na particao de memoria do processo
 		ptr++;
 
 	}
-	
 
-	
+
+
 }
 void criacaoProcesso(int pagina, ProcessControlBlock &pcb) //funcao de criacao do processo
 {
@@ -123,10 +123,10 @@ void criacaoProcesso(int pagina, ProcessControlBlock &pcb) //funcao de criacao d
 	frameid = alocaFrame(); //aloca no frame
 	std::cout << "pagina: " << pagina << "# Frame: " << frameid << std::endl;
 	pcb.pageTable.push_back(Pagina(pagina, frameid)); //jogamos na tabela de paginas a pagina com seu id e com o id do frame relacionado a ela
-	
-	
+
+
 	carrega(frameid); //carrega no frame
-	
+
 }
 int criaProcesso() //funcao que chama a criacao do processo
 {
@@ -135,12 +135,12 @@ int criaProcesso() //funcao que chama a criacao do processo
 	int disponiveis = 0, pagecount = 0;
 	std::list<Pagina>::iterator itt;
 	ProcessControlBlock aux;
-    if (programa.find(".txt") != std::string::npos)
-        ;
-    else programa = programa + ".txt";
+	if (programa.find(".txt") != std::string::npos)
+		;
+	else programa = programa + ".txt";
 
 
-    
+
 
 
 	std::cout << "Abrindo programa " << programa << std::endl << std::endl;
@@ -163,19 +163,19 @@ int criaProcesso() //funcao que chama a criacao do processo
 		aux = ProcessControlBlock(); //criamos nosso processo
 		for (it = 0; it < size; it++)
 		{
-			
-				criacaoProcesso(it, aux); //carregamos e adicionamos cada pagina em separado, com id dela == it
-				
-				
+
+			criacaoProcesso(it, aux); //carregamos e adicionamos cada pagina em separado, com id dela == it
+
+
 		}
-		
+
 		aux.setLimite(PAG_SIZE * aux.pageTable.size() - 1); //depois setamos o limite do nosso processo
 		aux.setBase(PAG_SIZE * aux.pageTable.front().getFrameID()); //a base
 		aux.setPC(aux.getBase()); //o pc, para comecarmos no lugar certo
 		ptr = memoriastart; //botamos nosso ponteiro de volta ao inicio da memoria, se quisermos adicionar outro processo
 		prontos.lock();
 		aux.setID(id); //setamos o id do processo
-		id++; 
+		id++;
 		ready.push_back(aux); //joga o processo novo na fila deprontos
 
 
@@ -193,7 +193,7 @@ int criaProcesso() //funcao que chama a criacao do processo
 	}
 	std::cout << "Nao ha memoria suficiente" << std::endl;
 	return -1;
-	
+
 
 }
 //#######################################################
@@ -207,17 +207,17 @@ void salvaContexto(ProcessControlBlock  &pcb) //funcao que salva PC e regs no PC
 	int ilocal = 0;
 	for (ilocal = 0; ilocal < 8; ilocal++)
 		pcb.setReg(ilocal, regBank[ilocal]);
-	
+
 	pcb.setPC(pc);
-	
+
 }
 void restauraContexto(ProcessControlBlock &pcb) //funcao que restaura os regs e o PC do PCB
 {
 	int ilocal = 0;
 	for (ilocal = 0; ilocal < 8; ilocal++)
-		regBank[ilocal]= pcb.getReg(ilocal);
+		regBank[ilocal] = pcb.getReg(ilocal);
 	pc = pcb.getPC();
-	
+
 	pcb.setEstado(RUNNING);
 }
 
@@ -226,37 +226,44 @@ void restauraContexto(ProcessControlBlock &pcb) //funcao que restaura os regs e 
 
 void rotinaTratamentoTimer() //rotina de tratamento de interrupcao por timeout
 {
-
+	std::list<Pagina>::iterator itt;
 	if (startExec == true && ready.size() != 0)
 		std::cout << "CPU timed out " << std::endl;
 	salvaContexto(running);
-	
 
-	
+
+
 	if (processEnd == true || noProc == true) //se um processo terminar
 	{
 		processEnd = false;
-		if (ready.size() != 0 ) //ele testa se a fila nao esta vazia
+		if (ready.size() != 0) //ele testa se a fila nao esta vazia
 		{
 			//se nao estiver ele desaloca o processo que acabou e escalona o proximo da fila
-			particoes[running.getBase() / PART_SIZE] = false;
+			for (itt = running.pageTable.begin(); itt != running.pageTable.end(); itt++) //desaloca todas as frames do processo
+			{
+				frames[itt->getFrameID()] = false;
+			}
+			
 			running = ready.front();
 			ready.pop_front();
 			restauraContexto(running);
 			desliga = false;
 			wait = false;
 			interrupcao = 0; //depois ele tira a flag de interrupcao
-		
+
 			return;
 		}
 		else //se estiver ele desaloca e bloqueia a execucao da cpu
 		{
-			particoes[running.getBase() / PART_SIZE] = false;
+			for (itt = running.pageTable.begin(); itt != running.pageTable.end(); itt++) //desaloca todas as frames do processo
+			{
+				frames[itt->getFrameID()] = false; 
+			}
 			running.setLimite(0);
 			wait = true;
 			running.setEstado(BLOCKED);
 			interrupcao = 0; //depois ele tira a flag de interrupcao
-		
+
 			return;
 		}
 	}
@@ -278,7 +285,7 @@ void rotinaTratamentoTimer() //rotina de tratamento de interrupcao por timeout
 			ready.pop_front();
 			interrupcao = 0; //depois ele tira a flag de interrupcao
 			desliga = false;
-		
+
 			return;
 		}
 		else
@@ -287,13 +294,13 @@ void rotinaTratamentoTimer() //rotina de tratamento de interrupcao por timeout
 			{
 				interrupcao = 0; //depois ele tira a flag de interrupcao
 				wait = false;
-	
+
 				return;
 			}
 		}
 		interrupcao = 0; //depois ele tira a flag de interrupcao
-	
-		
+
+
 		return;
 	}
 }
@@ -376,18 +383,18 @@ void CPU()
 	int addressSTX;
 	while (1)
 	{
-		
+
 		if (startExec == true) //a CPU so ira executar se esta flag for ativada com o comando [e]
 		{
-			
+
 			if (interrupcao == 3)
 				rotinaTratamentoTimer(); //executa a rotina de tratamento de interrupcao se a flag for ativada
 			else if (interrupcao == 1 || interrupcao == 2 || interrupcao == 4 || interrupcao == 5)
 				rotinaTratamentoIO();
-			
+
 			else
 			{
-			
+
 				if (wait == false && running.getEstado() == RUNNING && noProc == false)
 				{
 
@@ -397,12 +404,12 @@ void CPU()
 					UINS.setINST(decode(instReg)); //decodificacao
 					UINS.setR1(GetR1(instReg, UINS.getINST())); //decodificao
 					UINS.setR2(getR2_IMM(instReg, UINS.getINST())); //decodificacao
-					
+
 					//#########################   OPERACOES MEMORIA   #####################################
-					
+
 					if (UINS.getINST() == "LDD" || UINS.getINST() == "STD")
 					{
-							address = logicToPhysic(UINS.getR2()); //decodificamos o endereco logico para fisico
+						address = logicToPhysic(UINS.getR2()); //decodificamos o endereco logico para fisico
 						if (killProc == false) //se o endereco for valido ele continua
 						{
 							if (UINS.getINST() == "STX")
@@ -411,13 +418,13 @@ void CPU()
 								MemOps(regBank[UINS.getR1()], UINS.getINST(), address, memoriastart);
 						}
 					}
-					else if(UINS.getINST()== "LDX" || UINS.getINST()=="STX")
+					else if (UINS.getINST() == "LDX" || UINS.getINST() == "STX")
 					{
-						if(UINS.getINST() == "STX")
+						if (UINS.getINST() == "STX")
 							address = logicToPhysic(regBank[UINS.getR1()]);  //decodificamos o endereco logico para fisico, nosso stx foi implementado ao contrario
 						else
 							address = logicToPhysic(regBank[UINS.getR2()]); //decodificamos o endereco logico para fisico
-						
+
 						if (killProc == false)//se o endereco for valido ele continua
 						{
 							if (UINS.getINST() == "STX")
@@ -425,7 +432,7 @@ void CPU()
 							else
 								MemOps(regBank[UINS.getR1()], UINS.getINST(), address, memoriastart);
 						}
-					
+
 					}
 					//##########################################################################################
 
@@ -442,21 +449,21 @@ void CPU()
 
 
 					}
-					
+
 
 					//####################################   operacoes de salto   ##############################
-					
+
 					if (Branch(regBank[UINS.getR1()], regBank[UINS.getR2()], UINS.getINST()))
 						if (UINS.getINST() == "JMP")
 						{
 							address = logicToPhysic(UINS.getR2()); //decodificamos o endereco logico para fisico
-							if(killProc == false) //se o endereco for valido ele salta
+							if (killProc == false) //se o endereco for valido ele salta
 								pc = address; //jumps e branches dependentes da particao
 						}
 						else
 						{
 							address = logicToPhysic(regBank[UINS.getR1()]); //decodificamos o endereco logico para fisico
-							if(killProc == false) //se o endereco for valido ele salta
+							if (killProc == false) //se o endereco for valido ele salta
 								pc = address; //jumps e branches dependentes da particao
 						}
 					else
@@ -473,10 +480,10 @@ void CPU()
 					//#############################################################################################
 					//std::cout << pc << "::::::" << regBank[2] << "!!!!!! " << ready.size() << " xxx " << blocked.size() << " ttt ";
 
-			
+
 					std::cout << "Processo:" << running.getID() << " " << UINS.getINST() << " " << UINS.getR1() << " " << UINS.getR2() << std::endl;
 				}
-			
+
 
 			}
 			if (desliga == true) //flag ativada depois de usar o comando [s] para desligar a maquina
@@ -528,9 +535,9 @@ void shell()
 		std::cout << "[shell R] para resetar a flag de execucao" << std::endl;
 		std::cout << "[shell S] para sair" << std::endl;
 
-		
+
 		std::getline(std::cin, escolha);
-		if(escolha.find("shell") != escolha.npos)
+		if (escolha.find("shell") != escolha.npos)
 		{
 			if (escolha == "shell R" || escolha == "shell r")
 			{
@@ -588,7 +595,7 @@ void shell()
 			{
 				std::cout << "Comando invalido, digite novamente" << std::endl;
 			}
-			
+
 		}
 	}
 }
@@ -603,24 +610,24 @@ void shell()
 void rotinaTratamentoIO()
 {
 	pedidoConsole pedido;
-	int aux1, aux2;	
+	int aux1, aux2;
 	std::list<ProcessControlBlock>::iterator it;
 
-	
 
-	
 
-	if (interrupcao == 1 ||  interrupcao == 2) //se nosso console tem algum pedido pronto
+
+
+	if (interrupcao == 1 || interrupcao == 2) //se nosso console tem algum pedido pronto
 	{
-	
+
 		for (it = blocked.begin(); it != blocked.end(); it++)
 		{
-			
+
 			if (pedidoPronto.getIDProcesso() == it->getID()) //procuramos o processo que pediu o IO
 			{
 				prontos.lock();
 				ready.push_back(*it); //e colocamos ele de volta na fila de prontos
-			
+
 
 				blocked.erase(it);
 
@@ -632,16 +639,16 @@ void rotinaTratamentoIO()
 
 		if (ready.size() == 1) // se a fila so tiver um processo
 		{
-			
+
 			aux1 = ready.front().getID();
 			aux2 = running.getID();
-			
+
 			if (aux1 == aux2) // e os dois tiverem PIDS iguais
 			{
 				//encontramos o farsante
 				ready.pop_front(); // matamos ele
 				restauraContexto(running); //e ficamos com o verdadeiro
-				
+
 			}
 		}
 		//////////////////////////////////////////////
@@ -656,67 +663,67 @@ void console()
 	std::chrono::duration<double> elapsed_seconds;
 	int aux;
 	std::string aux2;
-	
+
 	double tempo = 0.0;
 	while (1)
 	{
-	
+
 		intt.lock();//para controlar a concorrência
-			if (interrupcao == 0) //so podemos tratar se nao estivermos escalonando nem tratando outra interrupcao
+		if (interrupcao == 0) //so podemos tratar se nao estivermos escalonando nem tratando outra interrupcao
+		{
+			if (filaPedidos.size() != 0) //enquanto tiverem pedidos, o console pega e vai tratando
 			{
-				if (filaPedidos.size() != 0) //enquanto tiverem pedidos, o console pega e vai tratando
+				pedido = filaPedidos.front();
+
+				if (pedido.getTipo() == 1) //se for leitura da memoria para escrita no terminal
 				{
-					pedido = filaPedidos.front();
-				
-					if (pedido.getTipo() == 1) //se for leitura da memoria para escrita no terminal
+					interrupcao = 1; //sinalizamos que o pedido foi tratado
+					pedidoPronto = pedido; //sinalizamos que o pedido foi tratado
+					filaPedidos.pop(); //e tiramos ele da fila
+
+					std::cout << "Processo " << pedido.getIDProcesso() << " pediu uma leitura da memoria" << std::endl;
+					std::cout << "Valor da posicao " << pedido.getParametro() << ": " << memoriastart[pedido.getParametro()] << std::endl;
+
+				}
+				else if (pedido.getTipo() == 2) //se for leitura do console para escrita na memoria
+				{
+					std::cout << "Processo " << pedido.getIDProcesso() << " pediu uma escrita na memoria" << std::endl;
+					std::cout << "Digite o valor: ";
+
+					std::getline(std::cin, consoleVal);
+					if (consoleVal.find("io") != consoleVal.npos) //pescamos um input até ele ser direcionado ao console
 					{
-						interrupcao = 1; //sinalizamos que o pedido foi tratado
+						interrupcao = 2; //sinalizamos que o pedido foi tratado
 						pedidoPronto = pedido; //sinalizamos que o pedido foi tratado
 						filaPedidos.pop(); //e tiramos ele da fila
-						
-						std::cout << "Processo " << pedido.getIDProcesso() << " pediu uma leitura da memoria" << std::endl;
-						std::cout << "Valor da posicao " << pedido.getParametro() << ": " << memoriastart[pedido.getParametro()] << std::endl;
-					
+
+						aux2 = consoleVal.substr(consoleVal.find(' ')); //cortamos a string inicial para deixar só o numero
+
+						aux2 = aux2.erase(0, 1); //tiramos o espaco em branco
+
+						std::istringstream aux3(aux2);
+						aux3 >> aux; //e botamos da stringstream para um inteiro
+						memoriastart[pedido.getParametro()] = aux;
+
+
+
+
+
 					}
-					else if (pedido.getTipo() == 2) //se for leitura do console para escrita na memoria
+					else
 					{
-						std::cout << "Processo " << pedido.getIDProcesso() << " pediu uma escrita na memoria" << std::endl;
-						std::cout << "Digite o valor: ";
-						
-						std::getline(std::cin, consoleVal); 
-						if (consoleVal.find("io") != consoleVal.npos) //pescamos um input até ele ser direcionado ao console
-						{
-							interrupcao = 2; //sinalizamos que o pedido foi tratado
-							pedidoPronto = pedido; //sinalizamos que o pedido foi tratado
-							filaPedidos.pop(); //e tiramos ele da fila
-						
-							aux2 = consoleVal.substr(consoleVal.find(' ')); //cortamos a string inicial para deixar só o numero
-							
-							aux2 = aux2.erase(0, 1); //tiramos o espaco em branco
-						
-							std::istringstream aux3(aux2);
-							aux3 >> aux; //e botamos da stringstream para um inteiro
-							memoriastart[pedido.getParametro()] = aux;
-							
-						
-							
-						
 
-						}
-						else
-						{
-							
-							interrupcao = 0;
-							
-						
-						}
-						
+						interrupcao = 0;
+
+
 					}
-				}
 
+				}
 			}
-			intt.unlock();//para controlar a concorrência
-			tempo = 0.0;
+
+		}
+		intt.unlock();//para controlar a concorrência
+		tempo = 0.0;
 
 		if (desliga == true)
 			break;
