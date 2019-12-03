@@ -2,9 +2,16 @@
 #ifndef _GPROCESS_H
 #define _GPROCESS_H
 #include <list>
+#include "Pagina.h"
 #include <algorithm>
 #include <fstream>
 #define PART_SIZE 128
+#define PAG_SIZE 16
+
+
+//Feito por Joaquim Lucena e Christian Bobsin
+
+
 enum state {READY,RUNNING,BLOCKED};
 class ProcessControlBlock
 {
@@ -15,8 +22,10 @@ class ProcessControlBlock
 		int limite;
 		int regBank[8] = { 0,0,0,0,0,0,0,0 };
 		int pc = 0;
+		
 
 	public:
+		std::list<Pagina> pageTable;
 		ProcessControlBlock()
 		{
 			base = 0;
@@ -79,7 +88,6 @@ class ProcessControlBlock
 	{
 		return regBank[i];
 	}
-
 
 };
 #endif
